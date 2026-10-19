@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snekagon Solved</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #fffdf8; --ink: #2b2620; --muted: #7a7064; --line: #d9d0c2;
+    --board: #6b4a2f; --cell: #7d5a3c;
+    --p0: #c62828; --p0soft: #ef9a9a; --p1: #1e5bd8; --p1soft: #90b4f5;
+    --good: #2e7d32; --theory: #6a4c93; --live: #8d6e00;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 18px; margin: 0 12px 0 0; }
+  button { font: inherit; padding: 5px 10px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; color: var(--ink); }
+  button:hover { border-color: var(--muted); }
+  button.sel { background: var(--ink); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .card + .card { margin-top: 12px; }
+  svg#board { width: 100%; max-height: 74vh; display: block; touch-action: manipulation; }
+  .hex { stroke: #4a321f; stroke-width: 1.5; }
+  .hex.empty { fill: var(--cell); }
+  .hex.p0 { fill: var(--p0); }
+  .hex.p1 { fill: var(--p1); }
+  .hex.last { stroke: #fff; stroke-width: 3; }
+  .hex.prev0 { fill: var(--p0soft); }
+  .hex.prev1 { fill: var(--p1soft); }
+  .lbl { font-size: 9px; fill: #fff8; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+  .tray { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+  .hand { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+  .hand .who { align-self: center; min-width: 84px; font-size: 12px; color: var(--muted); }
+  .hand .pc { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 48px; padding: 5px 7px; }
+  .hand.other .pc { border: 1px dashed var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); }
+  .hand svg { display: block; }
+  @media (max-width: 600px) { .hand .who { flex-basis: 100%; } }
+  .status { font-size: 15px; margin-bottom: 4px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .hist { font-family: ui-monospace, monospace; font-size: 12px; max-height: 260px; overflow: auto; line-height: 1.9; }
+  .hist span { cursor: pointer; padding: 1px 3px; border-radius: 3px; }
+  .hist span:hover { background: #eee; }
+  .hist span.cur { background: #ffe082; font-weight: 600; }
+  .hist span.future { opacity: .45; }
+  .tag { font-size: 10px; padding: 0 4px; border-radius: 3px; margin-left: 2px; color: #fff; vertical-align: 1px; }
+  .tag.theory { background: var(--theory); }
+  .tag.live { background: var(--live); }
+  .note b.theory { color: var(--theory); } .note b.live { color: var(--live); }
+  .win { color: var(--good); font-weight: 600; }
+  a { color: var(--p1); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐍 Snekagon is solved: red wins</h1>
+  <button id="bNew">New game</button>
+  <button id="bFirst" title="To the start (Home)">⏮</button>
+  <button id="bBack" title="One move back (←)">◀</button>
+  <button id="bFwd" title="One move forward (→)">▶</button>
+  <button id="bLast" title="To the end of the game (End)">⏭</button>
+  <button id="bPass">Pass</button>
+</header>
+<main>
+  <div class="card">
+    <div class="status" id="status">Loading the engine…</div>
+    <div class="tray" id="tray"></div>
+    <svg id="board"></svg>
+    <div class="muted">Pick a piece (keys 1–8) and point at a cell: the mouse wheel, R or a right click cycles through the
+      placements of the piece over that cell, a click plays it.</div>
+  </div>
+  <div>
+    <div class="card">
+      <b>You play blue. Red plays the proof.</b>
+      <div style="margin-top:6px">Red opens in the centre and has a winning strategy against every defence. Its moves
+        are marked <span class="tag theory">theory</span> when they come from the stored proof (red's moves 1, 3, 5
+        and 7: one answer to each of blue's 172 different first moves, and to every blue move below them), and
+        <span class="tag live">computed</span> when the exact solver finds them right now in your browser, from
+        move 9 on (or where move 7 was not stored), usually within milliseconds.</div>
+      <div class="note" id="note" style="margin-top:8px"></div>
+      <div class="muted" style="margin-top:8px">In this browser red won <span id="score">0 of 0 games</span>.
+        Step back (◀) to any point and try another blue move.</div>
+    </div>
+    <div class="card">
+      <b>Game</b>
+      <div class="hist" id="hist"></div>
+    </div>
+    <div class="card muted">
+      How it was proved and how to check it: <a id="repoLink" href="https://github.com/">the repository</a>
+      (README, PROOF.md). Snekagon and the original engine are by
+      <a href="https://github.com/BoltKey/snekagon-lab">BoltKey</a>.
+    </div>
+  </div>
+</main>
+<script>
+const SZ = 30, S3 = Math.sqrt(3);
+const PIECES = ['1','2','3I','3V','4I','4A','4B','4C'];
+const SHAPES = {'1':[[0,0]],'2':[[0,0],[1,0]],'3I':[[0,0],[0,1],[0,2]],'3V':[[0,0],[1,0],[1,1]],
+  '4I':[[0,0],[-1,1],[-2,2],[-3,3]],'4A':[[0,0],[1,0],[1,1],[1,2]],'4B':[[0,0],[0,1],[1,1],[1,2]],'4C':[[0,0],[-1,1],[-1,2],[0,2]]};
+const qr = i => [i % 11 - 5, Math.floor(i / 11) - 5];
+const px = (q, r) => [SZ * S3 * (q + r / 2), SZ * 1.5 * r];
+const hexPts = (x, y, s = SZ) => [...Array(6)].map((_, k) => { const a = Math.PI / 180 * (60 * k - 30); return (x + s * Math.cos(a)).toFixed(1) + ',' + (y + s * Math.sin(a)).toFixed(1); }).join(' ');
+
+let game = [];        // the whole game (the shown position may be an earlier point of it)
+let sources = [];     // per move of `game`: 'theory' | 'live' | '' (blue), with ms for live ones
+let st = null, sel = null, hoverCell = null, candIdx = 0, preview = null, busy = false;
+
+// the engine (WebAssembly, in a worker): {id, cmd} -> {id, out}; {id, load} fetches a proof file into it
+const worker = new Worker('snek-worker.js');
+let nextId = 0;
+const pending = new Map();
+worker.onmessage = e => { if (e.data.progress) return; const res = pending.get(e.data.id); pending.delete(e.data.id); res(JSON.parse(e.data.out)); };
+const cmd = c => new Promise(res => { const id = ++nextId; pending.set(id, res); worker.postMessage({ id, cmd: c }); });
+const loadFile = name => new Promise(res => { const id = ++nextId; pending.set(id, r => res(r.ok)); worker.postMessage({ id, load: name }); });
+function setBusy(b) { busy = b; document.querySelectorAll('header button').forEach(x => x.disabled = b); document.body.style.cursor = b ? 'progress' : ''; if (!b && st) render(); }
+
+// ---------- board ----------
+const svg = document.getElementById('board');
+const cells = [];
+(function buildBoard() {
+  const NS = 'http://www.w3.org/2000/svg';
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  const g = document.createElementNS(NS, 'g');
+  for (let i = 0; i < 121; i++) {
+    const [q, r] = qr(i);
+    if (Math.abs(q + r) > 5) continue;
+    const [x, y] = px(q, r);
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    const p = document.createElementNS(NS, 'polygon');
+    p.setAttribute('points', hexPts(x, y, SZ - 1));
+    p.classList.add('hex', 'empty');
+    p.addEventListener('mouseenter', () => { hoverCell = i; candIdx = 0; updatePreview(); });
+    p.addEventListener('click', () => {
+      if (hoverCell !== i) { hoverCell = i; candIdx = 0; updatePreview(); return; }  // touch: first tap shows
+      if (preview) playBlue(preview.s);
+    });
+    p.addEventListener('contextmenu', e => { e.preventDefault(); candIdx++; updatePreview(); });
+    g.appendChild(p);
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y); t.classList.add('lbl'); t.textContent = i;
+    g.appendChild(t);
+    cells[i] = p;
+  }
+  const bg = document.createElementNS(NS, 'polygon');
+  bg.setAttribute('points', hexPts(0, 0, 10.1 * SZ));
+  bg.setAttribute('fill', 'var(--board)');
+  bg.setAttribute('transform', 'rotate(30)');
+  svg.appendChild(bg);
+  svg.appendChild(g);
+  svg.setAttribute('viewBox', `${minX - SZ * 1.6} ${minY - SZ * 1.6} ${maxX - minX + SZ * 3.2} ${maxY - minY + SZ * 3.2}`);
+  svg.addEventListener('mouseleave', () => { hoverCell = null; updatePreview(); });
+  svg.addEventListener('wheel', e => { if (hoverCell != null) { e.preventDefault(); candIdx += e.deltaY > 0 ? 1 : -1; updatePreview(); } }, { passive: false });
+})();
+
+function candidates() {
+  if (!st || st.over || st.stm !== 1 || hoverCell == null || !sel) return [];
+  return st.legal.filter(m => m.p === sel && m.c.includes(hoverCell));
+}
+function updatePreview() {
+  preview = null;
+  const cs = candidates();
+  if (cs.length) preview = cs[((candIdx % cs.length) + cs.length) % cs.length];
+  render();
+}
+
+function render() {
+  if (!st) return;
+  const last = st.history.length ? st.history[st.history.length - 1] : null;
+  for (let i = 0; i < 121; i++) {
+    const p = cells[i]; if (!p) continue;
+    p.setAttribute('class', 'hex ' + (st.own[0].includes(i) ? 'p0' : st.own[1].includes(i) ? 'p1' : 'empty'));
+    if (last && last.c.includes(i)) p.classList.add('last');
+  }
+  if (preview) for (const i of preview.c) cells[i].setAttribute('class', 'hex prev1');
+  let s;
+  if (st.over) {
+    const [a, b] = st.longest;
+    s = `<b>Game over.</b> Red ${a}, blue ${b}: ${a > b ? '<span class="win">red wins</span>' : a < b ? 'blue wins' : 'a draw'}.`;
+  } else if (st.stm === 0) s = '<span class="dot" style="background:var(--p0)"></span>Red is moving…';
+  else s = `<span class="dot" style="background:var(--p1)"></span>Your move (blue), ${st.legal.length} legal moves.`;
+  s += `<div class="muted">Longest snake: red ${st.longest[0]}, blue ${st.longest[1]} (at most ${st.bounds[1][1]})</div>`;
+  document.getElementById('status').innerHTML = s;
+  // tray: blue's pieces (buttons), red's (shown)
+  const tray = document.getElementById('tray');
+  tray.innerHTML = '';
+  const legalPieces = new Set(st.over || st.stm !== 1 ? [] : st.legal.map(m => m.p));
+  for (const pl of [1, 0]) {
+    const mine = pl === 1 && !st.over && st.stm === 1;
+    const hand = document.createElement('div');
+    hand.className = 'hand' + (mine ? '' : ' other');
+    hand.innerHTML = `<span class="who">${pl === 0 ? 'red has left' : 'your pieces'}</span>`;
+    if (!st.avail[pl].length) hand.innerHTML += '<span class="who">nothing</span>';
+    for (const p of st.avail[pl]) {
+      const b = document.createElement(mine ? 'button' : 'span');
+      b.className = 'pc';
+      b.innerHTML = miniPiece(p, pl) + `<span>${p}</span>`;
+      if (mine) {
+        if (p === sel) b.classList.add('sel');
+        if (!legalPieces.has(p)) b.disabled = true;
+        b.onclick = () => { sel = p; updatePreview(); };
+      }
+      hand.appendChild(b);
+    }
+    tray.appendChild(hand);
+  }
+  document.getElementById('bPass').disabled = busy || st.over || st.stm !== 1 || st.legal.length > 0;
+  // history with the source of red's moves
+  const h = document.getElementById('hist');
+  const cur = st.history.length;
+  h.innerHTML = `<span data-k="-1" class="${cur === 0 ? 'cur' : ''}">start</span> ` + game.map((m, k) => {
+    const src = sources[k] || {};
+    const tag = src.kind === 'theory' ? '<span class="tag theory">theory</span>' : src.kind === 'live' ? `<span class="tag live">${src.ms} ms</span>` : '';
+    return `<span data-k="${k}" class="${k === cur - 1 ? 'cur' : k >= cur ? 'future' : ''}" style="color:var(--p${k % 2})">${k + 1}. ${m}${tag}</span>`;
+  }).join(' ');
+  h.querySelectorAll('span[data-k]').forEach(sp => sp.onclick = () => gotoPly(+sp.dataset.k + 1));
+  const curEl = h.querySelector('.cur');
+  if (curEl) h.scrollTop = Math.max(0, curEl.offsetTop - h.offsetTop - h.clientHeight / 2);
+  document.getElementById('bBack').disabled = busy || cur === 0;
+  document.getElementById('bFirst').disabled = busy || cur === 0;
+  document.getElementById('bFwd').disabled = busy || cur >= game.length;
+  document.getElementById('bLast').disabled = busy || cur >= game.length;
+}
+// a piece for the tray, turned the way it lies flattest
+const TRAY_PX = 0.3;
+function trayShape(p) {
+  let best = null, cs = SHAPES[p];
+  for (let k = 0; k < 6; k++) {
+    const pts = cs.map(([q, r]) => px(q, r));
+    const xs = pts.map(a => a[0]), ys = pts.map(a => a[1]);
+    const h = Math.max(...ys) - Math.min(...ys), w = Math.max(...xs) - Math.min(...xs);
+    if (!best || h < best.h - 1e-6 || (Math.abs(h - best.h) < 1e-6 && w < best.w)) best = { pts, h, w };
+    cs = cs.map(([q, r]) => [-r, q + r]);
+  }
+  return best.pts;
+}
+function miniPiece(p, pl) {
+  const pts = trayShape(p), hw = SZ * S3 / 2, pad = 2;
+  const xs = pts.map(a => a[0]), ys = pts.map(a => a[1]);
+  const x0 = Math.min(...xs) - hw - pad, y0 = Math.min(...ys) - SZ - pad;
+  const w = Math.max(...xs) + hw + pad - x0, h = Math.max(...ys) + SZ + pad - y0;
+  return `<svg viewBox="${x0.toFixed(1)} ${y0.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" width="${(w * TRAY_PX).toFixed(0)}" height="${(h * TRAY_PX).toFixed(0)}">` +
+    pts.map(([x, y]) => `<polygon points="${hexPts(x, y, SZ - 2)}" fill="var(--p${pl})"/>`).join('') + '</svg>';
+}
+
+// ---------- game ----------
+function apply(res) {
+  if (!res.ok) { document.getElementById('note').textContent = res.error || 'error'; return false; }
+  st = res.state || res;
+  const h = st.history.map(m => m.s);
+  const isPrefix = h.length <= game.length && h.every((m, i) => m === game[i]);
+  if (!isPrefix) { game = h; sources.length = h.length; }
+  if (!st.over && st.stm === 1 && (!sel || !st.avail[1].includes(sel) || !st.legal.some(m => m.p === sel))) {
+    const lp = st.legal.map(m => m.p);
+    sel = [...st.avail[1]].reverse().find(p => lp.includes(p)) || null;
+  }
+  updatePreview();
+  return true;
+}
+async function redMove() {
+  if (!st || st.over || st.stm !== 0) return;
+  setBusy(true);
+  const note = document.getElementById('note');
+  note.innerHTML = 'Red is thinking…';
+  let res;
+  for (let tries = 0; tries < 3; tries++) {
+    res = await cmd('proofmove');
+    if (res.ok || !res.need) break;
+    note.textContent = 'Loading the proof for this opening…';
+    if (!await loadFile(res.need)) break;
+  }
+  if (res.ok) {
+    const k = st.history.length;
+    const kind = res.source === 'proof' ? 'theory' : 'live';
+    apply(res);
+    sources[k] = { kind, ms: res.ms };
+    note.innerHTML = kind === 'theory'
+      ? `Red played <b>${res.played.s}</b>, <b class="theory">theory</b>: the stored proof's answer.`
+      : `Red played <b>${res.played.s}</b>, <b class="live">computed</b> by the exact solver in ${res.ms} ms.`;
+  } else note.textContent = res.error || ('Cannot load the proof file ' + (res.need || ''));
+  setBusy(false);
+  afterMove();
+}
+function afterMove() {
+  if (!st) return;
+  if (st.over) { countGame(); return; }
+  if (st.stm === 0) setTimeout(redMove, 30);
+  else if (st.legal.length === 0) document.getElementById('note').innerHTML += ' You have no legal move: pass.';
+}
+async function playBlue(s) {
+  if (busy || !st || st.stm !== 1) return;
+  setBusy(true);
+  const ok = apply(await cmd('play ' + s));
+  setBusy(false);
+  if (ok) afterMove();
+}
+async function gotoPly(n) {
+  if (busy) return;
+  n = Math.max(0, Math.min(n, game.length));
+  setBusy(true);
+  apply(await cmd('set ' + game.slice(0, n).join(' ')));
+  setBusy(false);
+  if (st && !st.over && st.stm === 0 && n === game.length) afterMove();  // red to move at the end of the game
+}
+let counted = null;
+function countGame() {
+  const k = st.history.map(m => m.s).join(' ');
+  if (counted === k) return;
+  counted = k;
+  let sc = { won: 0, games: 0 };
+  try { sc = JSON.parse(localStorage.getItem('snekProofScore')) || sc; } catch (e) {}
+  sc.games++;
+  if (st.longest[0] > st.longest[1]) sc.won++;
+  try { localStorage.setItem('snekProofScore', JSON.stringify(sc)); } catch (e) {}
+  showScore(sc);
+  document.getElementById('note').innerHTML = st.longest[0] > st.longest[1]
+    ? `<b class="win">Red wins ${st.longest[0]} to ${st.longest[1]}</b>, as the proof says.`
+    : '<b>Red did not win: that would contradict the proof. Please report this game.</b>';
+}
+function showScore(sc) {
+  if (!sc) { sc = { won: 0, games: 0 }; try { sc = JSON.parse(localStorage.getItem('snekProofScore')) || sc; } catch (e) {} }
+  document.getElementById('score').textContent = `${sc.won} of ${sc.games} game${sc.games === 1 ? '' : 's'}`;
+}
+
+document.getElementById('bNew').onclick = async () => { if (busy) return; setBusy(true); game = []; sources = []; apply(await cmd('new')); setBusy(false); afterMove(); };
+document.getElementById('bFirst').onclick = () => gotoPly(0);
+document.getElementById('bBack').onclick = () => gotoPly(st.history.length - 1);
+document.getElementById('bFwd').onclick = () => gotoPly(st.history.length + 1);
+document.getElementById('bLast').onclick = () => gotoPly(game.length);
+document.getElementById('bPass').onclick = () => playBlue('pass');
+document.addEventListener('keydown', e => {
+  if (!st) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); gotoPly(st.history.length - 1); return; }
+  if (e.key === 'ArrowRight') { e.preventDefault(); gotoPly(st.history.length + 1); return; }
+  if (e.key === 'Home') { e.preventDefault(); gotoPly(0); return; }
+  if (e.key === 'End') { e.preventDefault(); gotoPly(game.length); return; }
+  if (st.over || st.stm !== 1) return;
+  const k = +e.key;
+  if (k >= 1 && k <= 8) { const p = PIECES[k - 1]; if (st.avail[1].includes(p)) { sel = p; candIdx = 0; updatePreview(); } }
+  if (e.key === 'r' || e.key === 'R') { candIdx++; updatePreview(); }
+});
+
+(async () => {
+  showScore();
+  // on GitHub Pages (<owner>.github.io/<repo>/) the repository link points to github.com/<owner>/<repo>
+  if (location.hostname.endsWith('.github.io')) {
+    const repo = location.pathname.split('/').filter(Boolean)[0];
+    if (repo) document.getElementById('repoLink').href = `https://github.com/${location.hostname.split('.')[0]}/${repo}`;
+  }
+  // ?moves=1:60+4B:16,27,28,39+... opens that game
+  const pm = new URLSearchParams(location.search).get('moves');
+  if (pm) {
+    const r = await cmd('set ' + pm.trim());
+    if (r.ok) { apply(r); afterMove(); return; }
+  }
+  apply(await cmd('new'));
+  afterMove();
+})();
+</script>
+</body>
+</html>

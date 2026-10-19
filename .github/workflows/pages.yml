@@ -1,0 +1,33 @@
+# Builds the web page (web/build.sh: engine as WebAssembly, page, proof data) and publishes it on GitHub Pages
+# on every push to main. In the repository settings: Pages -> Source: GitHub Actions.
+name: Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - run: bash web/build.sh site-out
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site-out
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
